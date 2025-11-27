@@ -33,7 +33,7 @@ def extract_training(path: str = None):
     
     mndata = MNIST(path)
     images, labels = mndata.load_training()
-    return (images, labels, mndata)
+    return (format_images(images), labels, mndata)
 
 def extract_testing(path: str = None):
     if path is None or path == "":
@@ -43,6 +43,27 @@ def extract_testing(path: str = None):
     mndata = MNIST(path)
     images, labels = mndata.load_testing()
     return (images, labels, mndata)
+
+def format_images(images: []) -> []:
+    """
+    Normalise les images MNIST en divisant chaque pixel par 255.0
+    pour obtenir des valeurs entre 0 et 1.
+    
+    Args:
+        images: Liste de listes, où chaque élément est une image (784 pixels)
+    
+    Returns:
+        Liste de listes avec les pixels normalisés entre 0 et 1
+    """
+    formated_images = [float]
+    
+    # Chaque élément de 'images' est une image complète (784 pixels)
+    for image in images:
+        # Normaliser chaque pixel de l'image
+        normalized_image = [pixel / 255.0 for pixel in image]
+        formated_images.append(normalized_image)
+    
+    return formated_images
 
 
 def display_image(images, labels=None, mndata=None):
@@ -58,7 +79,9 @@ def display_image(images, labels=None, mndata=None):
     
     if mndata is not None:
         # Utiliser la méthode display de l'instance MNIST
-        print(mndata.display(images[index]))
+        print(f"mndata not none: {mndata.display(images[index])}")
+        # print(images[index])
+        # print(labels[index])
     else:
         # Affichage simple si pas d'instance MNIST
         if labels is not None:
