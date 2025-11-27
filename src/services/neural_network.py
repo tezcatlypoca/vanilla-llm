@@ -8,7 +8,11 @@ class NeuralNetwork:
     # NB_PARAM = None
     MAX_GRAD_NORM = 1.0                    
 
-    learning_rate: float = 0.01
+    learning_rate: float = 0.1
+    initial_learning_rate: float = 0.01  # Learning rate initial
+    min_learning_rate: float = 0.0001  # Learning rate minimum
+    learning_rate_decay: float = 0.95  # Facteur de décroissance par époque
+    patience: int = 5  # Nombre d'époques sans amélioration avant de réduire le LR
 
     def __init__(self):
         # Init neural layer
@@ -18,18 +22,19 @@ class NeuralNetwork:
         self.bias_mats = []
 
         self.layers.append(np.zeros((1, 784)))
-        self.layers.append(np.zeros((1, 16)))
-        self.layers.append(np.zeros((1, 16)))
+        self.layers.append(np.zeros((1, 256)))  # Couche cachée 1 : 256 neurones
+        self.layers.append(np.zeros((1, 128)))  # Couche cachée 2 : 128 neurones
         self.layers.append(np.zeros((1, 10)))
 
-        # Init weights and bias matrix
-        # Pour np.dot(current, w) où current est (1, 784), w doit être (784, 16)
-        self.weights_mats.append(np.random.randn(784, 16) * 0.1)  # De 784 vers 16
-        self.weights_mats.append(np.random.randn(16, 16) * 0.1)    # De 16 vers 16
-        self.weights_mats.append(np.random.randn(16, 10) * 0.1)    # De 16 vers 10
+        # Init weights and bias matrix avec initialisation de Xavier/Glorot
+        # Variance = 2 / (n_input + n_output) pour la sigmoïde
+        # Architecture : 784 → 256 → 128 → 10
+        self.weights_mats.append(np.random.randn(784, 256) * np.sqrt(2.0 / (784 + 256)))  # De 784 vers 256
+        self.weights_mats.append(np.random.randn(256, 128) * np.sqrt(2.0 / (256 + 128)))    # De 256 vers 128
+        self.weights_mats.append(np.random.randn(128, 10) * np.sqrt(2.0 / (128 + 10)))    # De 128 vers 10
 
-        self.bias_mats.append(np.zeros((1, 16)))  # Biais pour la première couche cachée
-        self.bias_mats.append(np.zeros((1, 16)))  # Biais pour la deuxième couche cachée
+        self.bias_mats.append(np.zeros((1, 256)))  # Biais pour la première couche cachée (256 neurones)
+        self.bias_mats.append(np.zeros((1, 128)))  # Biais pour la deuxième couche cachée (128 neurones)
         self.bias_mats.append(np.zeros((1, 10)))  # Biais pour la couche de sortie
 
         # Init des données d'entrainement
@@ -95,11 +100,10 @@ class NeuralNetwork:
     
     # Calcule le cout pour une sortie d'entrainement
     def cost(self, output_model, output_target) -> float:
-        cost: float = 0.0
-
-        for i in range(len(output_model)):
-            cost += np.square((output_model[i] - output_target[i]))
-        return cost
+        # Calculer la somme des carrés des différences
+        # output_model et output_target sont de forme (1, 10)
+        cost = np.sum(np.square(output_model - output_target))
+        return float(cost)
     
     # Retourne le coup moyen d'une liste de coup pour un batch donné
     # Param:
@@ -114,18 +118,29 @@ class NeuralNetwork:
 
     def training(self, epochs: int = 10):
         """
-        Entraîne le modèle sur les données d'entraînement.
+        Entraîne le modèle sur les données d'entraînement avec learning rate adaptatif.
         
         Args:
             epochs: Nombre d'époques (passes complètes sur les données)
         """
         batch_size = 1000
+        total_batches = (len(self.training_images) + batch_size - 1) // batch_size
         
-        print(f"Démarrage de l'entraînement sur {epochs} époques...\n")
+        # Réinitialiser le learning rate et les variables de suivi
+        self.learning_rate = self.initial_learning_rate
+        best_cost = float('inf')
+        epochs_without_improvement = 0
+        
+        print(f"Démarrage de l'entraînement sur {epochs} époques ({len(self.training_images)} images, {total_batches} batches/époque)")
+        print(f"Learning rate initial: {self.learning_rate:.6f}\n")
+        
+        epoch_costs = []  # Pour stocker le coût moyen de chaque époque
+        best_cost = float('inf')  # Meilleur coût observé
+        epochs_without_improvement = 0  # Compteur d'époques sans amélioration
         
         # Boucle sur les époques
         for epoch in range(epochs):
-            print(f"=== ÉPOQUE {epoch + 1}/{epochs} ===")
+            epoch_batch_costs = []
             
             # Parcourir les images par batch
             for batch_start in range(0, len(self.training_images), batch_size):
@@ -169,11 +184,50 @@ class NeuralNetwork:
                 self.update_weights(batch_grad_weights)
                 self.update_bias(batch_grad_bias)
                 
-                # Afficher le coût moyen du batch
+                # Calculer le coût moyen du batch
                 avg_cost = self.calculate_average_cost(batch_costs, len(batch_costs))
-                print(f"  Batch {batch_start//batch_size + 1}, Coût moyen: {avg_cost}")
+                epoch_batch_costs.append(avg_cost)
+                
+                # Afficher la progression (réécrit sur la même ligne)
+                batch_num = batch_start // batch_size + 1
+                progress = (batch_num / total_batches) * 100
+                print(f"\rÉpoque {epoch + 1}/{epochs} | Batch {batch_num}/{total_batches} ({progress:.1f}%) | Coût: {avg_cost:.4f}", end='', flush=True)
             
-            print()  # Ligne vide entre les époques
+            # Calculer le coût moyen de l'époque
+            epoch_avg_cost = self.calculate_average_cost(epoch_batch_costs, len(epoch_batch_costs))
+            epoch_costs.append(epoch_avg_cost)
+            
+            # Learning rate adaptatif : vérifier si amélioration
+            if epoch_avg_cost < best_cost:
+                best_cost = epoch_avg_cost
+                epochs_without_improvement = 0
+            else:
+                epochs_without_improvement += 1
+            
+            # Réduire le learning rate si pas d'amélioration depuis 'patience' époques
+            if epochs_without_improvement >= self.patience:
+                old_lr = self.learning_rate
+                self.learning_rate = max(self.learning_rate * self.learning_rate_decay, self.min_learning_rate)
+                if self.learning_rate != old_lr:
+                    print(f"\rÉpoque {epoch + 1}/{epochs} terminée | Coût: {epoch_avg_cost:.4f} | LR réduit: {old_lr:.6f} → {self.learning_rate:.6f} {' ' * 10}")
+                    epochs_without_improvement = 0  # Reset après réduction
+                else:
+                    print(f"\rÉpoque {epoch + 1}/{epochs} terminée | Coût: {epoch_avg_cost:.4f} | LR: {self.learning_rate:.6f} (min) {' ' * 20}")
+            else:
+                # Décroissance exponentielle normale
+                if epoch > 0:  # Ne pas réduire à la première époque
+                    self.learning_rate = max(self.learning_rate * self.learning_rate_decay, self.min_learning_rate)
+                print(f"\rÉpoque {epoch + 1}/{epochs} terminée | Coût: {epoch_avg_cost:.4f} | LR: {self.learning_rate:.6f} {' ' * 30}")
+        
+        # Résumé final de l'entraînement
+        print(f"\n{'='*60}")
+        print(f"ENTRAÎNEMENT TERMINÉ")
+        print(f"{'='*60}")
+        print(f"Nombre d'époques: {epochs}")
+        print(f"Coût initial (époque 1): {epoch_costs[0]:.4f}")
+        print(f"Coût final (époque {epochs}): {epoch_costs[-1]:.4f}")
+        print(f"Amélioration: {((epoch_costs[0] - epoch_costs[-1]) / epoch_costs[0] * 100):.2f}%")
+        print(f"{'='*60}\n")
 
     def testing(self):
         """
@@ -186,7 +240,7 @@ class NeuralNetwork:
         correct_predictions = 0
         total_images = len(test_images)
         
-        print(f"\nDémarrage du test sur {total_images} images...")
+        print(f"Test en cours sur {total_images} images...", end='', flush=True)
         
         # Tester chaque image
         for i in range(total_images):
@@ -204,13 +258,25 @@ class NeuralNetwork:
             
             if prediction == true_label:
                 correct_predictions += 1
+            
+            # Afficher la progression tous les 1000 images
+            if (i + 1) % 1000 == 0 or i == total_images - 1:
+                progress = ((i + 1) / total_images) * 100
+                print(f"\rTest en cours... {i + 1}/{total_images} ({progress:.1f}%)", end='', flush=True)
         
         # Calculer la précision
         accuracy = (correct_predictions / total_images) * 100
         
-        print(f"\nRésultats du test :")
-        print(f"Prédictions correctes : {correct_predictions}/{total_images}")
-        print(f"Précision : {accuracy:.2f}%")
+        # Résumé du test
+        print(f"\r{' ' * 60}")  # Effacer la ligne de progression
+        print(f"{'='*60}")
+        print(f"RÉSULTATS DU TEST")
+        print(f"{'='*60}")
+        print(f"Images testées: {total_images}")
+        print(f"Prédictions correctes: {correct_predictions}")
+        print(f"Prédictions incorrectes: {total_images - correct_predictions}")
+        print(f"PRÉCISION: {accuracy:.2f}%")
+        print(f"{'='*60}\n")
         
         return accuracy
 

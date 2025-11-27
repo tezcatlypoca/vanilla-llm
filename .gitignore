@@ -1,4 +1,8 @@
 llm-env
-/__pycache__
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
 .cursor/rules
 .local.env
