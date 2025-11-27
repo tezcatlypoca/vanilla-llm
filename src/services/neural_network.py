@@ -1,6 +1,23 @@
 from typing import List
 from utils.mnist import *
-import numpy as np
+
+# Tenter d'utiliser CuPy (GPU) avec fallback sur NumPy (CPU)
+try:
+    import cupy as np
+    import cupy
+    # Vérifier que le GPU est disponible
+    try:
+        cupy.cuda.Device(0).use()
+        print("✓ CuPy détecté - Utilisation du GPU (ROCm)")
+        GPU_AVAILABLE = True
+    except:
+        print("⚠ CuPy installé mais GPU non disponible - Utilisation de NumPy (CPU)")
+        import numpy as np
+        GPU_AVAILABLE = False
+except ImportError:
+    import numpy as np
+    print("ℹ CuPy non disponible - Utilisation de NumPy (CPU)")
+    GPU_AVAILABLE = False
 
 class NeuralNetwork:
 
@@ -15,6 +32,15 @@ class NeuralNetwork:
     patience: int = 5  # Nombre d'époques sans amélioration avant de réduire le LR
 
     def __init__(self):
+        # Afficher les informations GPU si disponible
+        if GPU_AVAILABLE:
+            try:
+                mempool = cupy.get_default_memory_pool()
+                print(f"GPU: {cupy.cuda.runtime.getDeviceProperties(0)['name'].decode()}")
+                print(f"Mémoire GPU disponible: {mempool.free_bytes() / 1024**3:.2f} GB")
+            except:
+                pass
+        
         # Init neural layer
         self.layers = []
         self.z_values = []
@@ -41,6 +67,8 @@ class NeuralNetwork:
         temp = extract_training(None)
         self.training_images = temp[0]
         self.training_labels = temp[1]
+        
+        # Si CuPy est utilisé, les données seront automatiquement sur GPU lors des conversions
 
 
     # Calcule la sortie pour une image en entrée donnée
