@@ -1,23 +1,15 @@
 from typing import List
 from utils.mnist import *
+import torch, math
 
-# Tenter d'utiliser CuPy (GPU) avec fallback sur NumPy (CPU)
-try:
-    import cupy as np
-    import cupy
-    # Vérifier que le GPU est disponible
-    try:
-        cupy.cuda.Device(0).use()
-        print("✓ CuPy détecté - Utilisation du GPU (ROCm)")
-        GPU_AVAILABLE = True
-    except:
-        print("⚠ CuPy installé mais GPU non disponible - Utilisation de NumPy (CPU)")
-        import numpy as np
-        GPU_AVAILABLE = False
-except ImportError:
-    import numpy as np
-    print("ℹ CuPy non disponible - Utilisation de NumPy (CPU)")
-    GPU_AVAILABLE = False
+# Détecter le device (GPU avec ROCm si disponible, sinon CPU)
+if torch.cuda.is_available():
+    device = torch.device("cuda:0")
+    print(f"✓ PyTorch - Utilisation du GPU: {torch.cuda.get_device_name(0)}")
+    print(f"Mémoire GPU disponible: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.2f} GB")
+else:
+    device = torch.device("cpu")
+    print("ℹ PyTorch - Utilisation du CPU")
 
 class NeuralNetwork:
 
@@ -32,65 +24,54 @@ class NeuralNetwork:
     patience: int = 5  # Nombre d'époques sans amélioration avant de réduire le LR
 
     def __init__(self):
-        # Afficher les informations GPU si disponible
-        if GPU_AVAILABLE:
-            try:
-                mempool = cupy.get_default_memory_pool()
-                print(f"GPU: {cupy.cuda.runtime.getDeviceProperties(0)['name'].decode()}")
-                print(f"Mémoire GPU disponible: {mempool.free_bytes() / 1024**3:.2f} GB")
-            except:
-                pass
-        
         # Init neural layer
         self.layers = []
         self.z_values = []
         self.weights_mats = []
         self.bias_mats = []
 
-        self.layers.append(np.zeros((1, 784)))
-        self.layers.append(np.zeros((1, 256)))  # Couche cachée 1 : 256 neurones
-        self.layers.append(np.zeros((1, 128)))  # Couche cachée 2 : 128 neurones
-        self.layers.append(np.zeros((1, 10)))
+        self.layers.append(torch.zeros((1, 784), device=device))
+        self.layers.append(torch.zeros((1, 256), device=device))  # Couche cachée 1 : 256 neurones
+        self.layers.append(torch.zeros((1, 128), device=device))  # Couche cachée 2 : 128 neurones
+        self.layers.append(torch.zeros((1, 10), device=device))
 
         # Init weights and bias matrix avec initialisation de Xavier/Glorot
         # Variance = 2 / (n_input + n_output) pour la sigmoïde
         # Architecture : 784 → 256 → 128 → 10
-        self.weights_mats.append(np.random.randn(784, 256) * np.sqrt(2.0 / (784 + 256)))  # De 784 vers 256
-        self.weights_mats.append(np.random.randn(256, 128) * np.sqrt(2.0 / (256 + 128)))    # De 256 vers 128
-        self.weights_mats.append(np.random.randn(128, 10) * np.sqrt(2.0 / (128 + 10)))    # De 128 vers 10
+        self.weights_mats.append(torch.randn(784, 256, device=device) * math.sqrt(2.0 / (784 + 256)))  # De 784 vers 256
+        self.weights_mats.append(torch.randn(256, 128, device=device) * math.sqrt(2.0 / (256 + 128)))    # De 256 vers 128
+        self.weights_mats.append(torch.randn(128, 10, device=device) * math.sqrt(2.0 / (128 + 10)))    # De 128 vers 10
 
-        self.bias_mats.append(np.zeros((1, 256)))  # Biais pour la première couche cachée (256 neurones)
-        self.bias_mats.append(np.zeros((1, 128)))  # Biais pour la deuxième couche cachée (128 neurones)
-        self.bias_mats.append(np.zeros((1, 10)))  # Biais pour la couche de sortie
+        self.bias_mats.append(torch.zeros((1, 256), device=device))  # Biais pour la première couche cachée (256 neurones)
+        self.bias_mats.append(torch.zeros((1, 128), device=device))  # Biais pour la deuxième couche cachée (128 neurones)
+        self.bias_mats.append(torch.zeros((1, 10), device=device))  # Biais pour la couche de sortie
 
         # Init des données d'entrainement
         temp = extract_training(None)
         self.training_images = temp[0]
         self.training_labels = temp[1]
-        
-        # Si CuPy est utilisé, les données seront automatiquement sur GPU lors des conversions
 
 
     # Calcule la sortie pour une image en entrée donnée
     def forward_prop(self):
         self.z_values = []
         # Layer 0 -> Layer 1
-        z1 = np.dot(self.layers[0], self.weights_mats[0]) + self.bias_mats[0]
+        z1 = torch.matmul(self.layers[0], self.weights_mats[0]) + self.bias_mats[0]
         self.z_values.append(z1)
         self.layers[1] = self.sigmoid(z1)
 
         # Layer 1 -> Layer 2
-        z2 = np.dot(self.layers[1], self.weights_mats[1]) + self.bias_mats[1]
+        z2 = torch.matmul(self.layers[1], self.weights_mats[1]) + self.bias_mats[1]
         self.z_values.append(z2)
         self.layers[2] = self.sigmoid(z2)
 
         # Layer 2 -> Layer 3
-        z3 = np.dot(self.layers[2], self.weights_mats[2]) + self.bias_mats[2]
+        z3 = torch.matmul(self.layers[2], self.weights_mats[2]) + self.bias_mats[2]
         self.z_values.append(z3)
         self.layers[3] = self.sigmoid(z3)
 
 
-    def back_prop(self, output_target: np.array):
+    def back_prop(self, output_target: torch.Tensor):
         output_model = self.layers[3]
         derivated_cost_output = 2 * (output_model - output_target)
 
@@ -98,19 +79,19 @@ class NeuralNetwork:
         error_output = derivated_cost_output * self.derivated_sigmoid(self.z_values[2])
 
         # calcule du gradient pour la derniere couche (2 -> 3)
-        grad_weights_2 = np.dot(self.layers[2].T, error_output)
+        grad_weights_2 = torch.matmul(self.layers[2].T, error_output)
         grad_bias_2 = error_output
         # propagation de l'erreur vers la couche 2
-        error_layer_2 = np.dot(error_output, self.weights_mats[2].T) * self.derivated_sigmoid(self.z_values[1])
+        error_layer_2 = torch.matmul(error_output, self.weights_mats[2].T) * self.derivated_sigmoid(self.z_values[1])
 
         # calcule du gradient pour la 2e couche (1 -> 2)        
-        grad_weights_1 = np.dot(self.layers[1].T, error_layer_2)
+        grad_weights_1 = torch.matmul(self.layers[1].T, error_layer_2)
         grad_bias_1 = error_layer_2
         # propagation de l'erreur vers la couche 1
-        error_layer_1 = np.dot(error_layer_2, self.weights_mats[1].T) * self.derivated_sigmoid(self.z_values[0])
+        error_layer_1 = torch.matmul(error_layer_2, self.weights_mats[1].T) * self.derivated_sigmoid(self.z_values[0])
 
         # calcule du gradient pour la 1e couche (0 -> 1)
-        grad_weights_0 = np.dot(self.layers[0].T, error_layer_1)
+        grad_weights_0 = torch.matmul(self.layers[0].T, error_layer_1)
         grad_bias_0 = error_layer_1
 
         grad_weights = [grad_weights_0, grad_weights_1, grad_weights_2]
@@ -130,8 +111,8 @@ class NeuralNetwork:
     def cost(self, output_model, output_target) -> float:
         # Calculer la somme des carrés des différences
         # output_model et output_target sont de forme (1, 10)
-        cost = np.sum(np.square(output_model - output_target))
-        return float(cost)
+        cost = torch.sum(torch.square(output_model - output_target))
+        return float(cost.item())
     
     # Retourne le coup moyen d'une liste de coup pour un batch donné
     # Param:
@@ -176,13 +157,13 @@ class NeuralNetwork:
                 batch_costs = []
                 
                 # Initialiser les accumulateurs de gradients
-                batch_grad_weights = [np.zeros_like(w) for w in self.weights_mats]
-                batch_grad_bias = [np.zeros_like(b) for b in self.bias_mats]
+                batch_grad_weights = [torch.zeros_like(w) for w in self.weights_mats]
+                batch_grad_bias = [torch.zeros_like(b) for b in self.bias_mats]
                 
                 # Pour chaque image du batch
                 for i in range(batch_start, batch_end):
-                    # Préparer l'image (convertir en numpy array de forme (1, 784))
-                    self.layers[0] = np.array(self.training_images[i]).reshape(1, 784)
+                    # Préparer l'image (convertir en tensor PyTorch de forme (1, 784))
+                    self.layers[0] = torch.tensor(self.training_images[i], dtype=torch.float32, device=device).reshape(1, 784)
                     
                     # Convertir le label en one-hot
                     target_label = self.label_to_one_hot(self.training_labels[i])
@@ -272,14 +253,14 @@ class NeuralNetwork:
         
         # Tester chaque image
         for i in range(total_images):
-            # Préparer l'image (convertir en numpy array de forme (1, 784))
-            self.layers[0] = np.array(test_images[i]).reshape(1, 784)
+            # Préparer l'image (convertir en tensor PyTorch de forme (1, 784))
+            self.layers[0] = torch.tensor(test_images[i], dtype=torch.float32, device=device).reshape(1, 784)
             
             # Forward propagation
             self.forward_prop()
             
             # Obtenir la prédiction (l'indice du neurone avec la valeur la plus élevée)
-            prediction = np.argmax(self.layers[3])
+            prediction = torch.argmax(self.layers[3]).item()
             
             # Comparer avec le label réel
             true_label = test_labels[i]
@@ -309,16 +290,16 @@ class NeuralNetwork:
         return accuracy
 
     # Convertit le label: training target, vers un vect pour calculer la fonction Cost du model
-    def label_to_one_hot(self, label: int) -> np.array:
-        one_hot = np.zeros((1, 10)) # renvoie un vecteur de dim(1, 10)
+    def label_to_one_hot(self, label: int) -> torch.Tensor:
+        one_hot = torch.zeros((1, 10), device=device) # renvoie un vecteur de dim(1, 10)
         one_hot[0, label] = 1.0
         return one_hot
     
     # Fonction sigmoid qui compresse la droite des réelles entre 0 et 1
     def sigmoid(self, x):
-        return 1 / (1 + np.exp(-x))
+        return 1 / (1 + torch.exp(-x))
     
     # retourne la dérivié de la sigmoid
-    def derivated_sigmoid(self, z) -> np.array:
+    def derivated_sigmoid(self, z) -> torch.Tensor:
         s = self.sigmoid(z)
         return s * (1 - s)
