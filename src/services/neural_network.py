@@ -1,14 +1,22 @@
 from typing import List
 from utils.mnist import *
 import torch, math
+import threading
 
 # Détecter le device (GPU avec ROCm si disponible, sinon CPU)
 if torch.cuda.is_available():
+    num_gpus = torch.cuda.device_count()
     device = torch.device("cuda:0")
-    print(f"✓ PyTorch - Utilisation du GPU: {torch.cuda.get_device_name(0)}")
-    print(f"Mémoire GPU disponible: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.2f} GB")
+    print(f"✓ PyTorch - {num_gpus} GPU(s) détecté(s)")
+    for i in range(num_gpus):
+        print(f"  GPU {i}: {torch.cuda.get_device_name(i)} ({torch.cuda.get_device_properties(i).total_memory / 1024**3:.2f} GB)")
+    if num_gpus >= 2:
+        print(f"✓ Parallélisation multi-GPU activée (2 GPU)")
+    else:
+        print(f"ℹ Un seul GPU disponible - Pas de parallélisation")
 else:
     device = torch.device("cpu")
+    num_gpus = 0
     print("ℹ PyTorch - Utilisation du CPU")
 
 class NeuralNetwork:
@@ -107,6 +115,66 @@ class NeuralNetwork:
         for i in range(len(self.bias_mats)):
             self.bias_mats[i] = self.bias_mats[i] - (self.learning_rate * grad_bias[i])
     
+    def _compute_gradients_on_gpu(self, gpu_id: int, image_indices: List[int]) -> tuple:
+        """
+        Calcule les gradients pour un sous-ensemble d'images sur un GPU spécifique.
+        Réutilise les fonctions forward_prop et back_prop existantes.
+        
+        Args:
+            gpu_id: ID du GPU à utiliser (0 ou 1)
+            image_indices: Liste des indices d'images à traiter
+            
+        Returns:
+            Tuple (grad_weights, grad_bias, batch_costs)
+        """
+        gpu_device = torch.device(f"cuda:{gpu_id}")
+        
+        # Sauvegarder les poids et biais originaux
+        original_weights = self.weights_mats.copy()
+        original_bias = self.bias_mats.copy()
+        
+        # Copier les poids et biais sur le GPU spécifique et les assigner temporairement
+        self.weights_mats = [w.to(gpu_device) for w in original_weights]
+        self.bias_mats = [b.to(gpu_device) for b in original_bias]
+        
+        # Initialiser les accumulateurs de gradients
+        batch_grad_weights = [torch.zeros_like(w) for w in self.weights_mats]
+        batch_grad_bias = [torch.zeros_like(b) for b in self.bias_mats]
+        batch_costs = []
+        
+        # Traiter chaque image du sous-batch
+        for i in image_indices:
+            # Préparer l'image sur le GPU spécifique
+            self.layers[0] = torch.tensor(self.training_images[i], dtype=torch.float32, device=gpu_device).reshape(1, 784)
+            target_label = self.label_to_one_hot(self.training_labels[i]).to(gpu_device)
+            
+            # Utiliser la fonction forward_prop existante
+            self.forward_prop()
+            
+            # Calculer le coût en utilisant la fonction cost existante
+            cost_value = self.cost(self.layers[3], target_label)
+            batch_costs.append(cost_value)
+            
+            # Utiliser la fonction back_prop existante
+            grad_weights, grad_bias = self.back_prop(target_label)
+            
+            # Accumuler les gradients
+            for j in range(len(batch_grad_weights)):
+                batch_grad_weights[j] += grad_weights[j]
+                batch_grad_bias[j] += grad_bias[j]
+        
+        # Moyenner les gradients
+        batch_size = len(image_indices)
+        for j in range(len(batch_grad_weights)):
+            batch_grad_weights[j] /= batch_size
+            batch_grad_bias[j] /= batch_size
+        
+        # Restaurer les poids et biais originaux
+        self.weights_mats = original_weights
+        self.bias_mats = original_bias
+        
+        return batch_grad_weights, batch_grad_bias, batch_costs
+    
     # Calcule le cout pour une sortie d'entrainement
     def cost(self, output_model, output_target) -> float:
         # Calculer la somme des carrés des différences
@@ -154,40 +222,81 @@ class NeuralNetwork:
             # Parcourir les images par batch
             for batch_start in range(0, len(self.training_images), batch_size):
                 batch_end = min(batch_start + batch_size, len(self.training_images))
-                batch_costs = []
-                
-                # Initialiser les accumulateurs de gradients
-                batch_grad_weights = [torch.zeros_like(w) for w in self.weights_mats]
-                batch_grad_bias = [torch.zeros_like(b) for b in self.bias_mats]
-                
-                # Pour chaque image du batch
-                for i in range(batch_start, batch_end):
-                    # Préparer l'image (convertir en tensor PyTorch de forme (1, 784))
-                    self.layers[0] = torch.tensor(self.training_images[i], dtype=torch.float32, device=device).reshape(1, 784)
-                    
-                    # Convertir le label en one-hot
-                    target_label = self.label_to_one_hot(self.training_labels[i])
-                    
-                    # Forward propagation
-                    self.forward_prop()
-                    
-                    # Calculer le coût (pour monitoring)
-                    cost_value = self.cost(self.layers[3], target_label)
-                    batch_costs.append(cost_value)
-                    
-                    # Backward propagation (récupérer les gradients)
-                    grad_weights, grad_bias = self.back_prop(target_label)
-                    
-                    # Accumuler les gradients
-                    for j in range(len(batch_grad_weights)):
-                        batch_grad_weights[j] += grad_weights[j]
-                        batch_grad_bias[j] += grad_bias[j]
-                
-                # Moyenner les gradients sur le batch
                 actual_batch_size = batch_end - batch_start
-                for j in range(len(batch_grad_weights)):
-                    batch_grad_weights[j] /= actual_batch_size
-                    batch_grad_bias[j] /= actual_batch_size
+                
+                # Parallélisation multi-GPU si 2 GPU ou plus disponibles
+                if num_gpus >= 2:
+                    # Diviser le batch en 2 sous-batches
+                    mid_point = batch_start + actual_batch_size // 2
+                    indices_gpu0 = list(range(batch_start, mid_point))
+                    indices_gpu1 = list(range(mid_point, batch_end))
+                    
+                    # Résultats partagés pour le threading
+                    results = [None, None]
+                    
+                    def compute_on_gpu0():
+                        results[0] = self._compute_gradients_on_gpu(0, indices_gpu0)
+                    
+                    def compute_on_gpu1():
+                        results[1] = self._compute_gradients_on_gpu(1, indices_gpu1)
+                    
+                    # Lancer les calculs en parallèle sur les 2 GPU
+                    thread0 = threading.Thread(target=compute_on_gpu0)
+                    thread1 = threading.Thread(target=compute_on_gpu1)
+                    thread0.start()
+                    thread1.start()
+                    thread0.join()
+                    thread1.join()
+                    
+                    # Récupérer les résultats
+                    grad_weights_0, grad_bias_0, costs_0 = results[0]
+                    grad_weights_1, grad_bias_1, costs_1 = results[1]
+                    
+                    # Moyenner les gradients des 2 GPU (ramener sur device principal)
+                    batch_grad_weights = []
+                    batch_grad_bias = []
+                    for j in range(len(grad_weights_0)):
+                        # Ramener sur le device principal et moyenner
+                        grad_w = (grad_weights_0[j].to(device) + grad_weights_1[j].to(device)) / 2
+                        grad_b = (grad_bias_0[j].to(device) + grad_bias_1[j].to(device)) / 2
+                        batch_grad_weights.append(grad_w)
+                        batch_grad_bias.append(grad_b)
+                    
+                    # Combiner les coûts
+                    batch_costs = costs_0 + costs_1
+                else:
+                    # Mode séquentiel (1 GPU ou CPU)
+                    batch_costs = []
+                    batch_grad_weights = [torch.zeros_like(w) for w in self.weights_mats]
+                    batch_grad_bias = [torch.zeros_like(b) for b in self.bias_mats]
+                    
+                    # Pour chaque image du batch
+                    for i in range(batch_start, batch_end):
+                        # Préparer l'image (convertir en tensor PyTorch de forme (1, 784))
+                        self.layers[0] = torch.tensor(self.training_images[i], dtype=torch.float32, device=device).reshape(1, 784)
+                        
+                        # Convertir le label en one-hot
+                        target_label = self.label_to_one_hot(self.training_labels[i])
+                        
+                        # Forward propagation
+                        self.forward_prop()
+                        
+                        # Calculer le coût (pour monitoring)
+                        cost_value = self.cost(self.layers[3], target_label)
+                        batch_costs.append(cost_value)
+                        
+                        # Backward propagation (récupérer les gradients)
+                        grad_weights, grad_bias = self.back_prop(target_label)
+                        
+                        # Accumuler les gradients
+                        for j in range(len(batch_grad_weights)):
+                            batch_grad_weights[j] += grad_weights[j]
+                            batch_grad_bias[j] += grad_bias[j]
+                    
+                    # Moyenner les gradients sur le batch
+                    for j in range(len(batch_grad_weights)):
+                        batch_grad_weights[j] /= actual_batch_size
+                        batch_grad_bias[j] /= actual_batch_size
                 
                 # Mettre à jour les poids et biais
                 self.update_weights(batch_grad_weights)
