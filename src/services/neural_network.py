@@ -111,7 +111,7 @@ class NeuralNetwork():
         if isinstance(batch, torch.Tensor):
             layer_0 = batch.to(device[gpu_id])
         elif isinstance(batch, list):
-            layer_0 = torch.tensor(batch, device=device[gpu_id])
+            layer_0 = torch.tensor(batch, device=device[gpu_id], dtype=torch.float32)
         else:
             raise ValueError("Le batch doit être de type torch.Tensor ou np.ndarray.")
 
@@ -123,7 +123,7 @@ class NeuralNetwork():
 
 
         # Calcule de z1 = Somme des activation de layer_0 pondérée par les weights
-        z1 = torch.matmul(layer_0, weights_gpu[0]) + bias_gpu[0] # = W @ layer_0 + B
+        z1 = torch.addmm(bias_gpu[0], layer_0, weights_gpu[0]) # = W @ layer_0 + B
         # Sauvegarde de z1
         self.z_values[0] = z1
         # Calcule de a1 grace au ReLU
@@ -134,7 +134,7 @@ class NeuralNetwork():
         ## Forward prop for layer_1 -> layer_2
 
         # Calcule de z2 = Somme des activation de layer_1 pondérée par les weights
-        z2 = torch.matmul(a1, weights_gpu[1]) + bias_gpu[1] # = W @ layer_0 + B
+        z2 = torch.addmm(bias_gpu[1], a1, weights_gpu[1]) # = W @ layer_0 + B
         # Sauvegarde de z1
         self.z_values[1] = z2
         # Calcule de a1 grace au ReLU
@@ -144,7 +144,7 @@ class NeuralNetwork():
         ## Forward prop for layer_2 -> layer_3
 
         # Calcule de z2 = Somme des activation de layer_1 pondérée par les weights
-        z3 = torch.matmul(a2, weights_gpu[2]) + bias_gpu[2] # = W @ layer_0 + B
+        z3 = torch.addmm(bias_gpu[2], a2, weights_gpu[2]) # = W @ layer_0 + B
         # Sauvegarde de z1
         self.z_values[2] = z3
         # Calcule de a1 grace au ReLU
@@ -240,35 +240,35 @@ class NeuralNetwork():
     def init_layers(self):
         # tableau comprenant les différentes couches du NN
         self.layers = []
-        self.layers.append(torch.tensor(np.zeros((1, 784)), device=device[0])) # Matrice d'entré représentant l'image 28x28: couche 0
-        self.layers.append(torch.tensor(np.zeros((1, 256)), device=device[0])) # layers couche 1
-        self.layers.append(torch.tensor(np.zeros((1, 128)), device=device[0])) # layers couche 2
-        self.layers.append(torch.tensor(np.zeros((1, 10)), device=device[0])) # Matrice de sortie (résultat): couche 3
+        self.layers.append(torch.tensor(np.zeros((1, 784)), device=device[0], dtype=torch.float32)) # Matrice d'entré représentant l'image 28x28: couche 0
+        self.layers.append(torch.tensor(np.zeros((1, 256)), device=device[0], dtype=torch.float32)) # layers couche 1
+        self.layers.append(torch.tensor(np.zeros((1, 128)), device=device[0], dtype=torch.float32)) # layers couche 2
+        self.layers.append(torch.tensor(np.zeros((1, 10)), device=device[0], dtype=torch.float32)) # Matrice de sortie (résultat): couche 3
     
     def init_weights(self):
         # tableau des poids et des biais du NN
         self.weights = []
-        self.weights.append(torch.tensor(np.random.randn(784, 256), device=device[0])) # Poids entre la couche (0, 1)
-        self.weights.append(torch.tensor(np.random.randn(256, 128), device=device[0])) # Poids entre la couche (1, 2)
-        self.weights.append(torch.tensor(np.random.randn(128, 10), device=device[0])) # Poids entre la couche (2, 3)
+        self.weights.append(torch.tensor(np.random.randn(784, 256), device=device[0], dtype=torch.float32)) # Poids entre la couche (0, 1)
+        self.weights.append(torch.tensor(np.random.randn(256, 128), device=device[0], dtype=torch.float32)) # Poids entre la couche (1, 2)
+        self.weights.append(torch.tensor(np.random.randn(128, 10), device=device[0], dtype=torch.float32)) # Poids entre la couche (2, 3)
 
     def init_bias(self):
         self.bias = []
-        self.bias.append(torch.tensor(np.random.randn(1, 256), device=device[0])) # Biais entre la couche (0, 1)
-        self.bias.append(torch.tensor(np.random.randn(1, 128), device=device[0])) # Biais entre la couche (1, 2)
-        self.bias.append(torch.tensor(np.random.randn(1, 10), device=device[0])) # Biais entre la couche (2, 3)
+        self.bias.append(torch.tensor(np.random.randn(1, 256), device=device[0], dtype=torch.float32)) # Biais entre la couche (0, 1)
+        self.bias.append(torch.tensor(np.random.randn(1, 128), device=device[0], dtype=torch.float32)) # Biais entre la couche (1, 2)
+        self.bias.append(torch.tensor(np.random.randn(1, 10), device=device[0], dtype=torch.float32)) # Biais entre la couche (2, 3)
 
     def init_z_values(self):
         # tableau contenant la somme des activations de la couche précédentes pondérée des poids et biais
         self.z_values = []
-        self.z_values.append(torch.tensor(np.random.randn(1, 256), device=device[0])) # Z_values en sortie de la couche 0 => couche 1
-        self.z_values.append(torch.tensor(np.random.randn(1, 128), device=device[0])) # Z_values en sortie de la couche 1 => couche 2
-        self.z_values.append(torch.tensor(np.random.randn(1, 10), device=device[0])) # Z_values en sortie de la couche 2 => couche 3
+        self.z_values.append(torch.tensor(np.random.randn(1, 256), device=device[0], dtype=torch.float32)) # Z_values en sortie de la couche 0 => couche 1
+        self.z_values.append(torch.tensor(np.random.randn(1, 128), device=device[0], dtype=torch.float32)) # Z_values en sortie de la couche 1 => couche 2
+        self.z_values.append(torch.tensor(np.random.randn(1, 10), device=device[0], dtype=torch.float32)) # Z_values en sortie de la couche 2 => couche 3
 
     def label_to_vect(self, labels: list) ->  torch.Tensor:
         batch_label = len(labels)
 
-        one_hot = torch.zeros((batch_label, 10))
+        one_hot = torch.zeros((batch_label, 10), dtype=torch.float32)
 
         for i, label in enumerate(labels):
             one_hot[i][label] = 1.0
