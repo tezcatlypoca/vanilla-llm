@@ -111,16 +111,16 @@ class NeuralNetwork():
     def forward_prop(self, batch: torch.Tensor | list, gpu_id: int = 0):
         if isinstance(batch, torch.Tensor):
             layer_0 = batch.to(device[gpu_id])
-
             if len(layer_0.shape) == 1:
                 layer_0 = layer_0.unsqueeze(0)
         elif isinstance(batch, list):
             layer_0 = torch.tensor(batch, device=device[gpu_id], dtype=torch.float32)
-            # S'assurer que c'est 2D : (batch_size, 784)
-        if len(layer_0.shape) == 1:
-            layer_0 = layer_0.unsqueeze(0)  # (784) -> (1, 784)
+            if len(layer_0.shape) == 1:
+                layer_0 = layer_0.unsqueeze(0)
         else:
-            raise ValueError("Le batch doit être de type torch.Tensor ou np.ndarray.")
+            raise ValueError("Le batch doit être de type torch.Tensor ou list.")
+        
+        # Vérification/adjustement de la shape si nécessaire
         if len(layer_0.shape) == 2 and layer_0.shape[1] != 784:
             # Si shape est (784, batch_size), transposer
             if layer_0.shape[0] == 784:
