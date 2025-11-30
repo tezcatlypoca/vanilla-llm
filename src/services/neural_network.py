@@ -246,11 +246,11 @@ class NeuralNetwork():
 
     def init_layers(self):
         # tableau comprenant les différentes couches du NN
-        self.layers = []
+        self.layers = torch.zeros(4)
         # self.layers.append(torch.tensor(np.zeros((1, 784)), device=device[0], dtype=torch.float32)) # Matrice d'entré représentant l'image 28x28: couche 0
-        self.layers.append(torch.tensor(np.zeros((1, 256)), device=device[0], dtype=torch.float32)) # layers couche 1
-        self.layers.append(torch.tensor(np.zeros((1, 128)), device=device[0], dtype=torch.float32)) # layers couche 2
-        self.layers.append(torch.tensor(np.zeros((1, 10)), device=device[0], dtype=torch.float32)) # Matrice de sortie (résultat): couche 3
+        self.layers[1] = torch.tensor(np.zeros((1, 256)), device=device[0], dtype=torch.float32) # layers couche 1
+        self.layers[2] = torch.tensor(np.zeros((1, 128)), device=device[0], dtype=torch.float32) # layers couche 2
+        self.layers[3] = torch.tensor(np.zeros((1, 10)), device=device[0], dtype=torch.float32) # Matrice de sortie (résultat): couche 3
     
     def init_weights(self):
         # tableau des poids et des biais du NN
