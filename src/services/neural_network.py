@@ -14,18 +14,25 @@ else:
 
 class NeuralNetwork():
 
+    INITIAL_RATE = 0.01
+    DECAY_RATE = 0.95
+
     # Params:
     #   - Layering: 
     #       * la taille du tableau représente le nombre de couche du NN
     #       * chaque représente le nombre de neurones de la couche
     def __init__(self):
         self.relu = torch.nn.ReLU() # Var contenant la fonction de ReLU, à utiliser comme une fonction
+        self.learning_rate = self.INITIAL_RATE
 
         # init de toutes les matrices
         self.init_layers()
         self.init_weights()
         self.init_bias()
         self.init_z_values()
+
+        # init des images et labels d'entrainement
+        self.training_images, self.training_labels = extract_training()
         
 
     def forward_prop(self, batch: torch.Tensor | np.ndarray, gpu_id: int = 0):
@@ -116,13 +123,37 @@ class NeuralNetwork():
     # END FUNCTION
 
     def training(self):
-        pass
+        batch_size = 500 
+        epochs = 10
+
+        for i in range(epochs):
+            for batch in range(len(self.training_images), batch_size):
+                batch_images = self.training_image[batch:batch+batch_size]
+
+                output_model = self.forward_prop(batch_images)
+                output_target = self.label_to_vect(self.training_labels[batch:batch+batch_size])
+
+                gradient_weights = self.back_prop(output_model, output_target)
+                pass
+
+        
 
     def testint(self):
         pass
 
-    def _compute_gradient(self):
-        pass
+    def _compute_gradient(self, gradient_weights: torch.Tensor, gradient_bias: torch.Tensor):
+        # MaJ des poids
+        self.weights[0] = self.weights[0] - (self.learning_rate * gradient_weights[0])
+        self.weights[1] = self.weights[1] - (self.learning_rate * gradient_weights[1])
+        self.weights[2] = self.weights[2] - (self.learning_rate * gradient_weights[2])
+
+        # MaJ des biais
+        self.bias[0] = self.bias[0] - (self.learning_rate * gradient_bias[0])
+        self.bias[1] = self.bias[1] - (self.learning_rate * gradient_bias[1])
+        self.bias[2] = self.bias[2] - (self.learning_rate * gradient_bias[2])
+
+    def _update_lr(self, epoch: int):
+        self.learning_rate = self.learning_rate * pow(self.DECAY_RATE, epoch)
 
     def init_layers(self):
         # tableau comprenant les différentes couches du NN
@@ -158,4 +189,4 @@ class NeuralNetwork():
         return vect
     
     def derivated_relu(self, x: torch.Tensor) -> torch.Tensor:
-        return (x > 0).float() # Convertit True/False en 1.0/0.0
+        return (x > 0).float() # Convertit True/False en 1.0/0.00
