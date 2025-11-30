@@ -19,6 +19,7 @@ class NeuralNetwork():
 
     INITIAL_RATE = 0.01
     DECAY_RATE = 0.95
+    BATCH_SIZE = 500
 
     output_test = []
 
@@ -42,7 +43,6 @@ class NeuralNetwork():
         self.testing_images, self.testing_labels, _ = extract_testing()
 
     def run(self, mode: str):
-        BATCH_SIZE = 500
         EPOCHS = 10
         if mode == "TRAINING":
 
@@ -50,12 +50,12 @@ class NeuralNetwork():
             start_time = time.time()
 
             for e_index in range(EPOCHS):
-                for i_index in range(0, len(self.training_images), BATCH_SIZE):
-                    batch_0 = self.training_images[i_index: i_index+(BATCH_SIZE//2)] # Première moitié du batch
-                    batch_1 = self.training_images[i_index+(BATCH_SIZE//2): i_index+BATCH_SIZE] # Deuxième moitié du batch
+                for i_index in range(0, len(self.training_images), self.BATCH_SIZE):
+                    batch_0 = self.training_images[i_index: i_index+(self.BATCH_SIZE//2)] # Première moitié du batch
+                    batch_1 = self.training_images[i_index+(self.BATCH_SIZE//2): i_index+self.BATCH_SIZE] # Deuxième moitié du batch
 
-                    labels_0 = self.training_labels[i_index: i_index+(BATCH_SIZE//2)]
-                    labels_1 = self.training_labels[i_index+(BATCH_SIZE//2): i_index+BATCH_SIZE]
+                    labels_0 = self.training_labels[i_index: i_index+(self.BATCH_SIZE//2)]
+                    labels_1 = self.training_labels[i_index+(self.BATCH_SIZE//2): i_index+self.BATCH_SIZE]
 
                     thread_gpu_0 = Thread(target=self.training, args=(e_index, batch_0, labels_0), kwargs={"device_id": 1}) # Utilisation du GPU 0
                     thread_gpu_1 = Thread(target=self.training, args=(e_index, batch_1, labels_1), kwargs={"device_id": 2}) # Utilisation du GPU 1
@@ -72,9 +72,9 @@ class NeuralNetwork():
             print("Début du test")
             start_time = time.time()
 
-            for i_index in range(0, len(self.testing_images), BATCH_SIZE):
-                batch_0 = self.testing_images[i_index: i_index+(BATCH_SIZE//2)] # Première moitié du batch
-                batch_1 = self.testing_images[i_index+(BATCH_SIZE//2): i_index+BATCH_SIZE] # Deuxième moitié du batch
+            for i_index in range(0, len(self.testing_images), self.BATCH_SIZE):
+                batch_0 = self.testing_images[i_index: i_index+(self.BATCH_SIZE//2)] # Première moitié du batch
+                batch_1 = self.testing_images[i_index+(self.BATCH_SIZE//2): i_index+self.BATCH_SIZE] # Deuxième moitié du batch
 
                 thread_gpu_0 = Thread(target=self.testing, args=(batch_0, 1)) # Utilisation du GPU 0
                 thread_gpu_1 = Thread(target=self.testing, args=(batch_1, 2)) # Utilisation du GPU 1
@@ -246,11 +246,11 @@ class NeuralNetwork():
 
     def init_layers(self):
         # tableau comprenant les différentes couches du NN
-        self.layers = torch.zeros(4)
-        # self.layers.append(torch.tensor(np.zeros((1, 784)), device=device[0], dtype=torch.float32)) # Matrice d'entré représentant l'image 28x28: couche 0
-        self.layers[1] = torch.tensor(np.zeros((1, 256)), device=device[0], dtype=torch.float32) # layers couche 1
-        self.layers[2] = torch.tensor(np.zeros((1, 128)), device=device[0], dtype=torch.float32) # layers couche 2
-        self.layers[3] = torch.tensor(np.zeros((1, 10)), device=device[0], dtype=torch.float32) # Matrice de sortie (résultat): couche 3
+        self.layers = []
+        self.layers.append(torch.tensor(np.zeros((self.BATCH_SIZE, 784)), device=device[0], dtype=torch.float32)) # Matrice d'entré représentant l'image 28x28: couche 0
+        self.layers.append(torch.tensor(np.zeros((self.BATCH_SIZE, 256)), device=device[0], dtype=torch.float32)) # layers couche 1
+        self.layers.append(torch.tensor(np.zeros((self.BATCH_SIZE, 128)), device=device[0], dtype=torch.float32)) # layers couche 2
+        self.layers.append(torch.tensor(np.zeros((self.BATCH_SIZE, 10)), device=device[0], dtype=torch.float32)) # Matrice de sortie (résultat): couche 3
     
     def init_weights(self):
         # tableau des poids et des biais du NN
