@@ -123,7 +123,7 @@ class NeuralNetwork():
 
 
         # Calcule de z1 = Somme des activation de layer_0 pondérée par les weights
-        z1 = torch.addmm(bias_gpu[0], layer_0, weights_gpu[0]) # = W @ layer_0 + B
+        z1 = torch.matmul(layer_0, weights_gpu[0]) + bias_gpu[0] # = W @ layer_0 + B
         # Sauvegarde de z1
         self.z_values[0] = z1
         # Calcule de a1 grace au ReLU
@@ -134,7 +134,7 @@ class NeuralNetwork():
         ## Forward prop for layer_1 -> layer_2
 
         # Calcule de z2 = Somme des activation de layer_1 pondérée par les weights
-        z2 = torch.addmm(bias_gpu[1], a1, weights_gpu[1]) # = W @ layer_0 + B
+        z2 = torch.matmul(a1, weights_gpu[1]) + bias_gpu[1] # = W @ layer_0 + B
         # Sauvegarde de z1
         self.z_values[1] = z2
         # Calcule de a1 grace au ReLU
@@ -144,7 +144,7 @@ class NeuralNetwork():
         ## Forward prop for layer_2 -> layer_3
 
         # Calcule de z2 = Somme des activation de layer_1 pondérée par les weights
-        z3 = torch.addmm(bias_gpu[2], a2, weights_gpu[2]) # = W @ layer_0 + B
+        z3 = torch.matmul(a2, weights_gpu[2]) + bias_gpu[2] # = W @ layer_0 + B
         # Sauvegarde de z1
         self.z_values[2] = z3
         # Calcule de a1 grace au ReLU
