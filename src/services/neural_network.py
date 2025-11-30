@@ -98,7 +98,7 @@ class NeuralNetwork():
     # END FUNCTION
 
     def training(self, epoch: int, batch: list, labels: list, device_id: int = 0):
-        batch_tensor = torch.tensor(batch)
+        batch_tensor = torch.tensor(batch, device[device_id], dtype=torch.float32)
         output_model = self.forward_prop(batch_tensor, device_id)
         output_target = self.label_to_vect(labels)
 
