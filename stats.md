@@ -33,4 +33,4 @@ Nouvelle archi
 
 10 epochs -> 84% (42s) - 83.5% - 85,11%
 30 epochs -> 85,7% - 87,6% 
-100 epochs -> 
+100 epochs -> 90,53%
