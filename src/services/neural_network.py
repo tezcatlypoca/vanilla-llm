@@ -19,7 +19,7 @@ else:
 class NeuralNetwork():
 
     INITIAL_RATE = 0.01
-    MIN_RATE = 0.0001
+    MIN_RATE = 0.001
     DECAY_RATE = 0.95
     BATCH_SIZE = 500
     MAX_EPOCHS = 10
@@ -375,22 +375,22 @@ class NeuralNetwork():
     def init_weights(self):
         # tableau des poids et des biais du NN
         self.weights = []
-        self.weights.append(torch.tensor(np.random.randn(784, 256), device=device[0], dtype=torch.float32)) # Poids entre la couche (0, 1)
-        self.weights.append(torch.tensor(np.random.randn(256, 128), device=device[0], dtype=torch.float32)) # Poids entre la couche (1, 2)
-        self.weights.append(torch.tensor(np.random.randn(128, 10), device=device[0], dtype=torch.float32)) # Poids entre la couche (2, 3)
+        self.weights.append(torch.tensor(np.random.randn(784, 256) * np.sqrt(2.0 / 784), device=device[0], dtype=torch.float32)) # Poids entre la couche (0, 1)
+        self.weights.append(torch.tensor(np.random.randn(256, 128) * np.sqrt(2.0 / 256), device=device[0], dtype=torch.float32)) # Poids entre la couche (1, 2)
+        self.weights.append(torch.tensor(np.random.randn(128, 10) * np.sqrt(2.0 / 128), device=device[0], dtype=torch.float32)) # Poids entre la couche (2, 3)
 
     def init_bias(self):
         self.bias = []
-        self.bias.append(torch.tensor(np.random.randn(1, 256), device=device[0], dtype=torch.float32)) # Biais entre la couche (0, 1)
-        self.bias.append(torch.tensor(np.random.randn(1, 128), device=device[0], dtype=torch.float32)) # Biais entre la couche (1, 2)
-        self.bias.append(torch.tensor(np.random.randn(1, 10), device=device[0], dtype=torch.float32)) # Biais entre la couche (2, 3)
+        self.bias.append(torch.zeros(1, 256), device=device[0], dtype=torch.float32) # Biais entre la couche (0, 1)
+        self.bias.append(torch.zeros((1, 128), device=device[0], dtype=torch.float32)) # Biais entre la couche (1, 2)
+        self.bias.append(torch.zeros((1, 10), device=device[0], dtype=torch.float32)) # Biais entre la couche (2, 3)
 
     def init_z_values(self):
         # tableau contenant la somme des activations de la couche précédentes pondérée des poids et biais
         self.z_values = []
-        self.z_values.append(torch.tensor(np.random.randn(1, 256), device=device[0], dtype=torch.float32)) # Z_values en sortie de la couche 0 => couche 1
-        self.z_values.append(torch.tensor(np.random.randn(1, 128), device=device[0], dtype=torch.float32)) # Z_values en sortie de la couche 1 => couche 2
-        self.z_values.append(torch.tensor(np.random.randn(1, 10), device=device[0], dtype=torch.float32)) # Z_values en sortie de la couche 2 => couche 3
+        self.z_values.append(torch.zeros((1, 256), device=device[0], dtype=torch.float32)) # Z_values en sortie de la couche 0 => couche 1
+        self.z_values.append(torch.zeros((1, 128), device=device[0], dtype=torch.float32)) # Z_values en sortie de la couche 1 => couche 2
+        self.z_values.append(torch.zeros((1, 10), device=device[0], dtype=torch.float32)) # Z_values en sortie de la couche 2 => couche 3
 
     def label_to_vect(self, labels: list) ->  torch.Tensor:
         batch_label = len(labels)
