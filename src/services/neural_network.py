@@ -381,7 +381,7 @@ class NeuralNetwork():
 
     def init_bias(self):
         self.bias = []
-        self.bias.append(torch.zeros(1, 256), device=device[0], dtype=torch.float32) # Biais entre la couche (0, 1)
+        self.bias.append(torch.zeros((1, 256), device=device[0], dtype=torch.float32)) # Biais entre la couche (0, 1)
         self.bias.append(torch.zeros((1, 128), device=device[0], dtype=torch.float32)) # Biais entre la couche (1, 2)
         self.bias.append(torch.zeros((1, 10), device=device[0], dtype=torch.float32)) # Biais entre la couche (2, 3)
 
