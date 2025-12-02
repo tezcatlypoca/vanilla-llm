@@ -2,6 +2,8 @@ from utils.mnist import extract_training, extract_testing
 from threading import Thread, Lock
 import numpy as np
 import torch, time
+import os
+from datetime import datetime
 
 device = []
 device.append(torch.device("cpu"))
@@ -36,6 +38,8 @@ class NeuralNetwork():
 
         self.relu = torch.nn.ReLU() # Var contenant la fonction de ReLU, à utiliser comme une fonction
         self.learning_rate = self.INITIAL_RATE
+        self.precision = None  # Précision calculée après test
+        self.total_time = None  # Temps total d'entraînement
 
         # init de toutes les matrices
         self.init_layers()
@@ -118,11 +122,15 @@ class NeuralNetwork():
                       f"Total: {elapsed_time/60:.1f}min | "
                       f"Restant: ~{estimated_remaining/60:.1f}min")
 
-            total_time = time.time() - start_time
+            self.total_time = time.time() - start_time
             print("=" * 70)
-            print(f"Entraînement terminé en {total_time/60:.1f} minutes ({total_time:.1f}s)")
+            print(f"Entraînement terminé en {self.total_time/60:.1f} minutes ({self.total_time:.1f}s)")
             print(f"Temps moyen par epoch: {sum(epoch_times)/len(epoch_times):.1f}s")
             print("=" * 70)
+            
+            # Sauvegarde automatique du modèle après l'entraînement
+            saved_path = self.save_model()
+            print(f"Modèle sauvegardé automatiquement: {saved_path}")
         elif mode == "TESTING":
             self.output_test = []
             total_test_batches = (len(self.testing_images) + self.BATCH_SIZE - 1) // self.BATCH_SIZE
@@ -176,6 +184,7 @@ class NeuralNetwork():
                 output_target_test = self.label_to_vect(self.testing_labels)
 
                 precision = self._compute_precision(output_model_test, output_target_test)
+                self.precision = precision  # Stocker la précision pour la sauvegarde
                 correct = (torch.argmax(output_model_test, dim=1) == torch.argmax(output_target_test, dim=1)).sum().item()
                 total = len(output_model_test)
                 
@@ -187,6 +196,27 @@ class NeuralNetwork():
                 print(f"Temps de test: {test_time:.1f}s ({test_time/60:.2f} min)")
                 print(f"Images par seconde: {len(self.testing_images)/test_time:.1f}")
                 print("=" * 70)
+                
+                # Si le modèle a été entraîné avant, mettre à jour la sauvegarde avec la précision
+                if self.total_time is not None:
+                    # Trouver le dernier modèle sauvegardé et le mettre à jour
+                    models_dir = "models"
+                    if os.path.exists(models_dir):
+                        # Récupérer le dernier fichier de modèle
+                        model_files = [f for f in os.listdir(models_dir) if f.startswith("model_") and f.endswith(".pt")]
+                        if model_files:
+                            # Trier par date de modification (le plus récent en dernier)
+                            model_files.sort(key=lambda x: os.path.getmtime(os.path.join(models_dir, x)))
+                            latest_model = os.path.join(models_dir, model_files[-1])
+                            # Charger, mettre à jour la précision et resauvegarder
+                            try:
+                                save_dict = torch.load(latest_model, map_location=device[0])
+                                if 'metadata' in save_dict:
+                                    save_dict['metadata']['precision'] = precision
+                                    torch.save(save_dict, latest_model)
+                                    print(f"Modèle mis à jour avec la précision: {latest_model}")
+                            except Exception as e:
+                                print(f"Attention: Impossible de mettre à jour le modèle avec la précision: {e}")
     # END FUNCTION
 
     def training(self, epoch: int, batch: list, labels: list, device_id: int = 0):
@@ -404,3 +434,108 @@ class NeuralNetwork():
     
     def derivated_relu(self, x: torch.Tensor) -> torch.Tensor:
         return (x > 0).float() # Convertit True/False en 1.0/0.00
+    
+    def save_model(self, filepath: str = None) -> str:
+        """
+        Sauvegarde le modèle (poids, biais et métadonnées) dans un fichier .pt
+        
+        Args:
+            filepath: Chemin du fichier de sauvegarde. Si None, génère un nom avec horodatage.
+        
+        Returns:
+            Chemin du fichier sauvegardé
+        """
+        # Créer le dossier models/ s'il n'existe pas
+        models_dir = "models"
+        if not os.path.exists(models_dir):
+            os.makedirs(models_dir)
+        
+        # Générer le nom de fichier avec horodatage si non fourni
+        if filepath is None or "":
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filepath = os.path.join(models_dir, f"model_{timestamp}.pt")
+        else:
+            # S'assurer que le chemin est dans le dossier models/
+            if not filepath.startswith(models_dir):
+                filepath = os.path.join(models_dir, filepath)
+        
+        # Déplacer les poids et biais sur CPU pour compatibilité
+        weights_cpu = [w.to(device[0]) for w in self.weights]
+        bias_cpu = [b.to(device[0]) for b in self.bias]
+        
+        # Préparer les métadonnées
+        metadata = {
+            'architecture': [layer.shape[1] for layer in self.layers],  # Tailles des couches
+            'epochs': self.MAX_EPOCHS,
+            'initial_lr': self.INITIAL_RATE,
+            'final_lr': self.learning_rate,
+            'batch_size': self.BATCH_SIZE,
+            'training_time': self.total_time if self.total_time is not None else None,
+            'precision': self.precision,  # Peut être None si test non effectué
+            'saved_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        
+        # Créer le dictionnaire de sauvegarde
+        save_dict = {
+            'weights': weights_cpu,
+            'bias': bias_cpu,
+            'metadata': metadata
+        }
+        
+        # Sauvegarder
+        torch.save(save_dict, filepath)
+        print(f"Modèle sauvegardé: {filepath}")
+        
+        return filepath
+    
+    def load_model(self, filepath: str) -> dict:
+        """
+        Charge un modèle sauvegardé depuis un fichier .pt
+        
+        Args:
+            filepath: Chemin du fichier à charger
+        
+        Returns:
+            Dictionnaire contenant les métadonnées du modèle chargé
+        
+        Raises:
+            FileNotFoundError: Si le fichier n'existe pas
+            RuntimeError: Si le fichier est corrompu ou incompatible
+        """
+        if not os.path.exists(filepath):
+            raise FileNotFoundError(f"Le fichier {filepath} n'existe pas.")
+        
+        try:
+            # Charger le fichier
+            save_dict = torch.load(filepath, map_location=device[0])
+            
+            # Vérifier la structure
+            if 'weights' not in save_dict or 'bias' not in save_dict:
+                raise RuntimeError("Format de fichier invalide: poids ou biais manquants.")
+            
+            # Restaurer les poids et biais
+            self.weights = [w.to(device[0]) for w in save_dict['weights']]
+            self.bias = [b.to(device[0]) for b in save_dict['bias']]
+            
+            # Afficher les métadonnées
+            metadata = save_dict.get('metadata', {})
+            print("=" * 70)
+            print("MODÈLE CHARGÉ")
+            print("=" * 70)
+            if metadata:
+                print(f"Architecture: {metadata.get('architecture', 'N/A')}")
+                print(f"Epochs: {metadata.get('epochs', 'N/A')}")
+                print(f"Learning rate initial: {metadata.get('initial_lr', 'N/A')}")
+                print(f"Learning rate final: {metadata.get('final_lr', 'N/A')}")
+                print(f"Batch size: {metadata.get('batch_size', 'N/A')}")
+                if metadata.get('training_time'):
+                    print(f"Temps d'entraînement: {metadata.get('training_time'):.1f}s ({metadata.get('training_time')/60:.1f} min)")
+                if metadata.get('precision') is not None:
+                    print(f"Précision: {metadata.get('precision'):.2f}%")
+                print(f"Sauvegardé le: {metadata.get('saved_at', 'N/A')}")
+            print("=" * 70)
+            
+            return metadata
+            
+        except Exception as e:
+            raise RuntimeError(f"Erreur lors du chargement du modèle: {str(e)}")
