@@ -1,7 +1,9 @@
 kagglehub
 python-mnist
 numpy
+scipy
 # PyTorch avec ROCm 5.7 pour GPU AMD Vega 64
 # Installation: pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm5.7
 torch
 torchvision
+PyQt5

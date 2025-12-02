@@ -1,6 +1,5 @@
 from PyQt5 import *
 from PyQt5.QtCore import QSize
-from PyQt5.QtGui import QMouseEvent
 from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton, QWidget, QVBoxLayout, QHBoxLayout
 from qwidget import DrawingWidget
 import sys
@@ -17,6 +16,7 @@ central_widget.setLayout(main_layout)
 
 # Canvas en haut (prend tout l'espace disponible)
 canva = DrawingWidget()
+canva.setFixedSize(560, 560)
 main_layout.addWidget(canva)
 
 # Container pour le bouton centré en bas
@@ -36,7 +36,7 @@ main_layout.addWidget(button_container)
 
 window.setCentralWidget(central_widget)
 
-window.setMinimumSize(QSize(560, 560))
+window.setMinimumSize(QSize(600, 600))
 window.show()
 
 app.exec()

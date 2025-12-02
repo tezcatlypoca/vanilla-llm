@@ -1,6 +1,8 @@
-from PyQt5.QtGui import QPainter, QPen, QColor
+from PyQt5.QtGui import QPainter, QPen, QColor, QPixmap
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QWidget
+
+from utils.resize_image import resize_image
 
 
 class DrawingWidget(QWidget):
@@ -9,6 +11,13 @@ class DrawingWidget(QWidget):
         super().__init__()
         self.last_point = None  # Pour stocker le point précédent
         self.lines = []  # Pour stocker toutes les lignes à dessiner
+
+        # Modif de la couleur de background
+        self.setProperty('active', True)
+        self.setAutoFillBackground(True)
+        p = self.palette()
+        p.setColor(self.backgroundRole(), Qt.blue)
+        self.setPalette(p)
 
     def mousePressEvent(self, event):
         print("Pressed !")
@@ -36,5 +45,12 @@ class DrawingWidget(QWidget):
         for start_point, end_point in self.lines:
             painter.drawLine(start_point, end_point)
 
+    def save_draw(self):
+        self.draw = self.grab()
+        resized_img = resize_image(self.draw)
+        
+
     def refresh(self):
+        self.hide()
+        self.show()
         self.lines = []
