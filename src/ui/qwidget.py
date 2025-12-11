@@ -49,7 +49,7 @@ class DrawingWidget(QWidget):
         painter.fillRect(self.rect(), QColor(Qt.white))
         
         # Ensuite dessiner les lignes
-        painter.setPen(QPen(QColor(Qt.black), 2, Qt.SolidLine))
+        painter.setPen(QPen(QColor(Qt.black), 12, Qt.SolidLine))
         for start_point, end_point in self.lines:
             painter.drawLine(start_point, end_point)
 
@@ -81,9 +81,9 @@ class DrawingWidget(QWidget):
         img_hash = hash(tuple(resized_img[:50]))  # Hash des 50 premiers pixels
         print(f"  Hash (50 premiers pixels): {img_hash}")
         
-        # Afficher l'image en ASCII art
+        # Afficher l'image en ASCII art (C'EST L'IMAGE CENTRÉE QUI EST AFFICHÉE)
         print("\n" + "=" * 30)
-        print("Image capturée (28x28):")
+        print("Image capturée et CENTRÉE (28x28) - Celle envoyée au modèle:")
         print("=" * 30)
         
         # Solution 1 : Utiliser display_image_ascii (fonction custom)

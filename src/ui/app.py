@@ -1,5 +1,7 @@
 import sys, os, glob
 from pathlib import Path
+import numpy as np
+import torch
 from neural_network import NeuralNetwork
 
 # Ajouter src/ au PYTHONPATH pour les imports
@@ -75,12 +77,14 @@ class MyApp(QApplication):
 
     def send_image(self):
         draw = self.canva.save_draw()  # Utiliser save_draw() au lieu de resize()
+        # Stocker l'image pour pouvoir la réutiliser pour l'apprentissage
+        self.current_user_image = draw
         self.canva.refresh()
 
         if self.model_loaded:
             # run("USER") retourne déjà (predicted_label, probabilities)
             predicted_label, probabilities = self.nn.run("USER", user_image=draw)
-            self.prediction_dlg(predicted_label, probabilities)
+            self.prediction_dlg(predicted_label, probabilities, draw)
         else:
             # Afficher un message d'erreur si le modèle n'est pas disponible
             msg = QMessageBox(self.window)
@@ -114,35 +118,182 @@ class MyApp(QApplication):
             print("Modèle chargé avec succès.")
         else:
             print("Aucun modèle sauvegardé trouvé. Le modèle sera entraîné au premier envoi.")
+            self.nn.run("TRAINING")
             self.model_loaded = False
     # END FUNCTION
         
-    def prediction_dlg(self, label: int, probabilities):
+    def prediction_dlg(self, predicted_label: int, probabilities, user_image: list):
         dlg = QDialog(self.window)
         dlg.setWindowTitle("Prédiction")
-        dlg.setMinimumSize(QSize(300, 200))
+        dlg.setMinimumSize(QSize(350, 300))
         
         layout = QVBoxLayout()
         
         # Afficher le label prédit
-        label_text = QLabel(f"Chiffre prédit: <b>{label}</b>")
+        label_text = QLabel(f"Chiffre prédit: <b>{predicted_label}</b>")
         label_text.setAlignment(Qt.AlignCenter)
         layout.addWidget(label_text)
         
-        # Afficher les probabilités
-        prob_text = "Probabilités:\n"
-        for i, prob in enumerate(probabilities):
-            prob_text += f"{i}: {prob*100:.2f}%\n"
+        # Afficher les probabilités (top 3 seulement pour ne pas surcharger)
+        prob_text = "Probabilités (top 3):\n"
+        top_indices = np.argsort(probabilities)[::-1][:3]
+        for idx in top_indices:
+            prob_text += f"{idx}: {probabilities[idx]*100:.2f}%\n"
         
         prob_label = QLabel(prob_text)
         prob_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(prob_label)
+
+        # Question de validation
+        question_label = QLabel("Le résultat est-il correct ?")
+        question_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(question_label)
         
-        # Bouton OK
-        ok_button = QPushButton("OK")
-        ok_button.clicked.connect(dlg.accept)
+        # Boutons Yes/No
+        buttons_layout = QHBoxLayout()
+        yes_btn = QPushButton("Oui")
+        no_btn = QPushButton("Non")
+        buttons_layout.addWidget(yes_btn)
+        buttons_layout.addWidget(no_btn)
+        layout.addLayout(buttons_layout)
+
+        # Champ pour la réponse correcte (caché initialement)
+        answer_label = QLabel("Quel est le bon chiffre ? (0-9):")
+        answer_label.setVisible(False)
+        user_answer = QLineEdit()
+        user_answer.setPlaceholderText("Entrez un chiffre entre 0 et 9")
+        user_answer.setVisible(False)
+        user_answer.setMaxLength(1)
+        
+        # Bouton OK pour valider la réponse
+        ok_button = QPushButton("Valider")
+        ok_button.setVisible(False)
+        
+        layout.addWidget(answer_label)
+        layout.addWidget(user_answer)
         layout.addWidget(ok_button)
+        
+        # Variables pour stocker le résultat
+        result = {"correct": None, "true_label": None}
+        
+        def on_yes():
+            result["correct"] = True
+            result["true_label"] = predicted_label
+            dlg.accept()
+        
+        def on_no():
+            answer_label.setVisible(True)
+            user_answer.setVisible(True)
+            ok_button.setVisible(True)
+            yes_btn.setVisible(False)
+            no_btn.setVisible(False)
+            user_answer.setFocus()
+        
+        def on_ok():
+            try:
+                correct_number = int(user_answer.text())
+                if 0 <= correct_number <= 9:
+                    result["correct"] = False
+                    result["true_label"] = correct_number
+                    dlg.accept()
+                else:
+                    QMessageBox.warning(dlg, "Erreur", "Veuillez entrer un chiffre entre 0 et 9.")
+            except ValueError:
+                QMessageBox.warning(dlg, "Erreur", "Veuillez entrer un nombre valide.")
+        
+        yes_btn.clicked.connect(on_yes)
+        no_btn.clicked.connect(on_no)
+        ok_button.clicked.connect(on_ok)
+        user_answer.returnPressed.connect(on_ok)  # Entrée pour valider
         
         dlg.setLayout(layout)
         dlg.exec()
+        
+        # Traiter le résultat après la fermeture de la dialog
+        if result["correct"] is not None:
+            self.handle_user_feedback(result["correct"], result["true_label"], user_image, predicted_label)
+    # END FUNCTION
+
+    def handle_user_feedback(self, is_correct: bool, true_label: int, user_image: list, predicted_label: int):
+        """
+        Gère le retour de l'utilisateur et effectue l'apprentissage en ligne si nécessaire.
+        
+        Args:
+            is_correct: True si la prédiction était correcte, False sinon
+            true_label: Le label correct (soit predicted_label si correct, soit la réponse de l'utilisateur)
+            user_image: L'image dessinée par l'utilisateur
+            predicted_label: Le label prédit par le modèle
+        """
+        if is_correct:
+            print(f"✓ Prédiction correcte: {predicted_label}")
+            # Faire un apprentissage en ligne pour renforcer le comportement positif
+            # avec un learning rate encore plus faible pour juste renforcer légèrement
+            self.online_learning(user_image, true_label, reinforcement=True)
+        else:
+            print(f"✗ Prédiction incorrecte: prédit {predicted_label}, correct: {true_label}")
+            # Faire un apprentissage en ligne avec cette image pour corriger
+            self.online_learning(user_image, true_label, reinforcement=False)
+    # END FUNCTION
+
+    def online_learning(self, user_image: list, correct_label: int, reinforcement: bool = False):
+        """
+        Effectue un apprentissage en ligne avec une seule image.
+        Utilise un learning rate beaucoup plus faible pour éviter le surapprentissage.
+        
+        Args:
+            user_image: L'image à utiliser pour l'apprentissage (liste de 784 pixels)
+            correct_label: Le label correct pour cette image
+            reinforcement: True si c'est pour renforcer une prédiction correcte, False pour corriger une erreur
+        """
+        if reinforcement:
+            print(f"Renforcement positif: image avec label {correct_label}")
+        else:
+            print(f"Correction: image avec label {correct_label}")
+        
+        # Déterminer le device à utiliser
+        from neural_network import device
+        if len(device) >= 3:  # Au moins CPU + 2 GPU
+            device_id = 1  # GPU 0
+        else:
+            device_id = 0  # CPU
+        
+        # Sauvegarder le learning rate actuel
+        original_lr = self.nn.learning_rate
+        
+        # Utiliser un learning rate adapté selon le type d'apprentissage
+        if reinforcement:
+            # Pour le renforcement positif : learning rate très faible pour juste renforcer légèrement
+            online_lr = 0.00001  # 1000x plus faible (renforcement très léger)
+        else:
+            # Pour la correction d'erreur : learning rate un peu plus élevé mais toujours faible
+            online_lr = 0.0001  # 100x plus faible que le learning rate initial (0.01)
+        
+        self.nn.learning_rate = online_lr
+        print(f"  Learning rate: {online_lr} (original: {original_lr})")
+        
+        try:
+            # Créer un batch avec une seule image
+            batch = [user_image]
+            labels = [correct_label]
+            
+            # Calculer forward prop
+            batch_tensor = torch.tensor(batch, dtype=torch.float32)
+            output_model = self.nn.forward_prop(batch_tensor, device_id)
+            output_target = self.nn.label_to_vect(labels)
+            
+            # Calculer les gradients avec backprop
+            gradients = self.nn.back_prop(output_model, output_target, device_id)
+            
+            # Appliquer directement les gradients (pas besoin de moyenne pour une seule image)
+            if gradients is not None:
+                self.nn._compute_gradient(gradients, device_id)
+                if reinforcement:
+                    print(f"✓ Renforcement positif terminé pour le label {correct_label}")
+                else:
+                    print(f"✓ Correction terminée pour le label {correct_label}")
+            else:
+                print("✗ Erreur: aucun gradient calculé")
+        finally:
+            # Restaurer le learning rate original
+            self.nn.learning_rate = original_lr
     # END FUNCTION
